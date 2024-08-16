@@ -4,6 +4,7 @@ import os
 import json
 import requests
 import re
+from urllib.parse import quote
 
 start_text = """
       _  _      _                 _         
@@ -24,10 +25,12 @@ def Init():
         "base_url": "https://hayqbhgr.slider.kz/vk_auth.php?q=",
         "max_duration": 3600,
         "debug": False,
-        "download_dir": "downloads"  # 默认下载目录
+        "download_dir": "downloads",
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.131 Safari/537.36",  # 默认用户代理
+        "referer": "https://hayqbhgr.slider.kz/"  # 默认HTTP来源地址
     }
     config_file = 'config.json'
-    Config_error = "配置项有误！请检查配置文件。如果你不知道发生了什么故障，请删除目录下的config.json，程序会自动按照默认配置新建配置文件。" # 配置文件错误提示
+    config_error = "配置项有误！请检查配置文件。如果你不知道发生了什么故障，请删除目录下的config.json，程序会自动按照默认配置新建配置文件。"
 
     # 检查配置文件是否存在
     print("正在检查配置文件...")
@@ -36,7 +39,7 @@ def Init():
         with open(config_file, 'w') as f:
             json.dump(default_config, f, indent=4)
         print(f'配置文件 {config_file} 不存在，已创建默认配置。')
-        return  # 配置文件已生成，程序应在下一次运行时加载
+        return
 
     # 读取配置文件
     with open(config_file, 'r') as f:
@@ -44,33 +47,36 @@ def Init():
             config = json.load(f)
         except json.JSONDecodeError:
             print("配置文件格式错误，请确保文件为有效的 JSON 格式。")
-            print(Config_error)
-            input("按下任意键退出程序")  # 停止程序
+            print(config_error)
+            input("按任意键退出")
 
     # 检查每个配置项是否存在并有效
     for key, value in default_config.items():
         if key not in config:
             print(f"配置文件中缺少配置项：{key}")
-            print(Config_error)
-            input("按下任意键退出程序")  # 停止程序
+            print(config_error)
+            input("按任意键退出")
         if not isinstance(config[key], type(value)):
             print(f"配置项 {key} 的类型无效，期望类型为 {type(value).__name__}，但得到的是 {type(config[key]).__name__}")
-            print(Config_error)
-            input("按下任意键退出程序")  # 停止程序
+            print(config_error)
+            input("按任意键退出")
 
     # 如果所有配置项均有效，更新全局变量
-    global base_url, max_duration, debug, download_dir
+    global base_url, max_duration, debug, download_dir, user_agent, referer
     base_url = config.get('base_url')
     max_duration = config.get('max_duration')
     debug = config.get('debug', False)
     download_dir = config.get('download_dir', "downloads")
+    user_agent = config.get('user_agent', "MyDownloadTool/1.0")
+    referer = config.get('referer', "https://hayqbhgr.slider.kz/")
     
     if debug:
-        print("[重要提醒]本次运行开启了调试模式。")
-        print("如果你不知道这是什么，请在config.json中将debug设置为False。")
+        print("本次运行开启了调试模式。")
         print(f"Debug：请求的URL: {base_url}")
         print(f"Debug：最大时长: {max_duration}")
         print(f"Debug：下载目录: {download_dir}")
+        print(f"Debug：用户代理: {user_agent}")
+        print(f"Debug：HTTP来源地址: {referer}")
         print(f"Debug：调试模式: {debug}")
     
     print("初始化检查已完成！")
@@ -94,10 +100,16 @@ def search():
     while not input_prompt:
         input_prompt = input('搜索关键词不能为空，请重新输入：')
     
-    search_url = base_url + input_prompt
+    # 对用户输入进行URL编码
+    encoded_prompt = quote(input_prompt)
+    search_url = base_url + encoded_prompt
     
     # 发送HTTP请求获取JSON响应
-    response = requests.get(search_url)
+    headers = {
+        'User-Agent': user_agent,
+        'Referer': referer
+    }
+    response = requests.get(search_url, headers=headers)
     
     # 检查请求是否成功
     if response.status_code == 200:
@@ -110,10 +122,6 @@ def search():
 
         if debug:
             print(f"调试信息：获取到的JSON数据：{json_data}")
-        # 解析音频信息
-        audio_urls = parse_audio_info(json_data, max_duration)
-        if not audio_urls:
-            print("没有符合条件的音频文件。")
         return json_data
     else:
         print(f'请求失败，状态码：{response.status_code}')
@@ -232,18 +240,29 @@ def download_audio_files(audio_urls):
     if not os.path.exists(download_dir):
         os.makedirs(download_dir)
 
+    headers = {
+        'User-Agent': user_agent,
+        'Referer': referer
+    }
+
     for audio in audio_urls:
         url = audio['url']
-        title = audio['title'].replace(" ", "_").replace("/", "_")
+        title = audio['title'].replace(" ", "").replace("/", "_")
         filename = f"{download_dir}/{title}.mp3"
         
-        print(f"正在下载: {title}")
-        music_response = requests.get(url)
-        with open(filename, 'wb') as f:
-            f.write(music_response.content)
-        print(f"已保存: {filename}")
+        print(f"正在下载: {title}.mp3")
+        response = requests.get(url, headers=headers)
+        
+        # 检查请求是否成功
+        if response.status_code == 200:
+            with open(filename, 'wb') as f:
+                f.write(response.content)
+            print(f"已保存: {filename}")
+        else:
+            print(f"下载 {title} 失败，状态码：{response.status_code}")
     
     print("所有文件下载完成！")
+
 
 Init()
 if __name__ == "__main__":
