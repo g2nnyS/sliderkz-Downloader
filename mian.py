@@ -124,9 +124,12 @@ def main():
 
     # 询问是否再次搜索
     while True:
-        search_again = input('是否需要再次搜索？(y/n)：').strip().lower()
-        if search_again in ['y', 'n']:
-            break
+        search_again = input('是否需要再次搜索？(y/n)：')
+        if search_again == 'y':
+            main()
+        elif search_again == 'n':
+            print("感谢使用！")
+            input("按任意键退出")
         else:
             print("无效输入，请输入 'y' 或 'n'。")
 
@@ -357,5 +360,5 @@ def download_audio_files(audio_urls):
     print("所有文件下载完成！")
 
 if __name__ == "__main__":
-    Init()
+    config = Init()
     main()
