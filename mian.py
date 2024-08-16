@@ -21,10 +21,10 @@ config = None
 
 
 def Init():
-    global config
     default_config = {
         "base_url": "https://hayqbhgr.slider.kz/vk_auth.php?q=",
         "max_duration": 3600,
+        "min_duration": 0,  # 添加最小时长配置项
         "debug": False,
         "download_dir": "downloads",
         "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.131 Safari/537.36",
@@ -37,7 +37,7 @@ def Init():
     config_error = "配置项有误！请检查配置文件。如果你不知道发生了什么故障，请删除目录下的config.json，程序会自动按照默认配置新建配置文件。"
 
     # 声明全局变量
-    global base_url, max_duration, debug, download_dir, user_agent, referer, use_proxy, proxy, mode
+    global base_url, max_duration, min_duration, debug, download_dir, user_agent, referer, use_proxy, proxy, mode
 
     # 检查配置文件是否存在
     print("正在检查配置文件...")
@@ -75,6 +75,7 @@ def Init():
     # 如果所有配置项均有效，更新全局变量
     base_url = config.get('base_url')
     max_duration = config.get('max_duration')
+    min_duration = config.get('min_duration')
     debug = config.get('debug')
     download_dir = config.get('download_dir')
     user_agent = config.get('user_agent')
@@ -89,6 +90,7 @@ def Init():
         print("以下是配置信息：")
         print(f"Debug：请求的URL: {base_url}")
         print(f"Debug：最大时长: {max_duration}")
+        print(f"Debug：最小时长: {min_duration}")
         print(f"Debug：下载目录: {download_dir}")
         print(f"Debug：用户代理: {user_agent}")
         print(f"Debug：HTTP来源地址: {referer}")
@@ -112,7 +114,7 @@ def main():
     json_data = search()
 
     # 解析音频信息
-    audio_urls = parse_audio_info(json_data, max_duration)
+    audio_urls = parse_audio_info(json_data, max_duration, min_duration)
 
     # 让用户排除不需要的音频
     audio_urls = exclude_tracks(audio_urls, config)
@@ -152,7 +154,7 @@ def search():
         print(f'请求失败，状态码：{response.status_code}')
         return None
 
-def parse_audio_info(json_data, max_duration):
+def parse_audio_info(json_data, max_duration, min_duration):
     audios_container = json_data.get('audios', {})
     audio_urls = []
     
@@ -181,10 +183,10 @@ def parse_audio_info(json_data, max_duration):
                         print(f"调试信息：音频数据缺少必要字段 (duration: {duration}, tit_art: {tit_art}, url: {url})")
                     continue
                 
-                # 排除时长在 max_duration 以上的音频
-                if duration > max_duration:
+                # 排除时长在 max_duration 以上、min_duration 以下的音频
+                if duration >= max_duration or duration <= min_duration:
                     if debug:
-                        print(f"调试信息：音频时长 {duration} 秒超过最大时长 {max_duration} 秒，已排除。")
+                        print(f"调试信息：音频 {tit_art} 的时长 {duration} 秒不在范围内，跳过该音频。")
                     continue
                 
                 # 将编号、曲名和URL添加到列表中
