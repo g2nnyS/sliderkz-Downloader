@@ -29,7 +29,8 @@ def Init():
         "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.131 Safari/537.36",
         "referer": "https://hayqbhgr.slider.kz/",
         "use_proxy": False,  # 默认不使用代理
-        "proxy": "http://127.0.0.1:8080"  # 默认代理服务器地址
+        "proxy": "http://127.0.0.1:8080",  # 默认代理服务器地址
+        "mode": "blacklist"  # 默认模式为黑名单
     }
     config_file = 'config.json'
     config_error = "配置项有误！请检查配置文件。如果你不知道发生了什么故障，请删除目录下的config.json，程序会自动按照默认配置新建配置文件。"
@@ -73,9 +74,12 @@ def Init():
     referer = config.get('referer')
     use_proxy = config.get('use_proxy')
     proxy = config.get('proxy')
+    mode = config.get('mode')
     
     if debug:
-        print("本次运行开启了调试模式。")
+        print("[重要提醒]本次运行开启了调试模式。")
+        print("如果你不知道这是什么，请在config.json中将debug设置为False。")
+        print("以下是配置信息：")
         print(f"Debug：请求的URL: {base_url}")
         print(f"Debug：最大时长: {max_duration}")
         print(f"Debug：下载目录: {download_dir}")
@@ -84,8 +88,15 @@ def Init():
         print(f"Debug：是否使用代理: {use_proxy}")
         print(f"Debug：代理服务器地址: {proxy}")
         print(f"Debug：调试模式: {debug}")
+        print(f"Debug：模式: {mode}")
     
     print("初始化检查已完成！")
+    if mode == "blacklist":
+        print("现在我们正工作在黑名单模式下。")
+        print("在黑名单模式下，在筛选时，你需要输入要排除的曲目编号。")
+    elif mode == "whitelist":
+        print("现在我们正工作在白名单模式下。")
+        print("在白名单模式下，在筛选时，你需要输入要保留的曲目编号。")
 
 
 def main():
@@ -181,7 +192,9 @@ def parse_audio_info(json_data, max_duration):
 
 def exclude_tracks(audio_urls):
     excluded_indices = set()
+    included_indices = set()
     all_excluded_tracks = []
+    all_included_tracks = []
 
     # 打印初始的音频文件列表
     print("音频文件列表:")
@@ -189,41 +202,68 @@ def exclude_tracks(audio_urls):
         print(f"编号: {audio['index']}, 曲名: {audio['title']}, 时长: {audio['duration']}")
     
     while True:
-        exclude_input = input('请输入要排除的曲目编号（用逗号隔开），或按回车键跳过排除：')
+        exclude_input = input('请输入要排除或保留的曲目编号（用逗号隔开），或按回车键跳过：')
         
         if not exclude_input:
             break
         
         try:
             indices = [int(i.strip()) for i in exclude_input.split(',')]
-            new_exclusions = [index for index in indices if index not in excluded_indices]
-            ignored_exclusions = [index for index in indices if index in excluded_indices]
+            if config["mode"] == "blacklist":
+                new_exclusions = [index for index in indices if index not in excluded_indices]
+                ignored_exclusions = [index for index in indices if index in excluded_indices]
+                
+                # 更新已排除的索引集合
+                excluded_indices.update(new_exclusions)
+                
+                # 更新所有被排除的曲目列表
+                for index in new_exclusions:
+                    audio = next((audio for audio in audio_urls if audio['index'] == index), None)
+                    if audio:
+                        all_excluded_tracks.append(audio)
+                
+                # 显示已排除的曲目
+                if new_exclusions:
+                    print("你已经排除：")
+                    for audio in all_excluded_tracks:
+                        print(f"编号: {audio['index']}, 曲名: {audio['title']}, 时长: {audio['duration']}")
+                
+                # 提示被忽略的排除项目（如果有）
+                if ignored_exclusions:
+                    print("以下编号已经被排除，忽略它们：")
+                    print(", ".join(map(str, ignored_exclusions)))
             
-            # 更新已排除的索引集合
-            excluded_indices.update(new_exclusions)
-            
-            # 更新所有被排除的曲目列表
-            for index in new_exclusions:
-                audio = next((audio for audio in audio_urls if audio['index'] == index), None)
-                if audio:
-                    all_excluded_tracks.append(audio)
-            
-            # 显示已排除的曲目
-            if new_exclusions:
-                print("你已经排除：")
-                for audio in all_excluded_tracks:
-                    print(f"编号: {audio['index']}, 曲名: {audio['title']}, 时长: {audio['duration']}")
-            
-            # 提示被忽略的排除项目（如果有）
-            if ignored_exclusions:
-                print("以下编号已经被排除，忽略它们：")
-                print(", ".join(map(str, ignored_exclusions)))
+            elif config["mode"] == "whitelist":
+                new_inclusions = [index for index in indices if index not in included_indices]
+                ignored_inclusions = [index for index in indices if index in included_indices]
+                
+                # 更新已保留的索引集合
+                included_indices.update(new_inclusions)
+                
+                # 更新所有被保留的曲目列表
+                for index in new_inclusions:
+                    audio = next((audio for audio in audio_urls if audio['index'] == index), None)
+                    if audio:
+                        all_included_tracks.append(audio)
+                
+                # 显示已保留的曲目
+                if new_inclusions:
+                    print("你已经保留：")
+                    for audio in all_included_tracks:
+                        print(f"编号: {audio['index']}, 曲名: {audio['title']}, 时长: {audio['duration']}")
+                
+                # 提示被忽略的保留项目（如果有）
+                if ignored_inclusions:
+                    print("以下编号已经被保留，忽略它们：")
+                    print(", ".join(map(str, ignored_inclusions)))
             
             if debug:
-                # 调试信息：打印排除后的剩余曲目
+                # 调试信息：打印排除或保留后的剩余曲目
                 print("调试信息：剩余的音频文件列表:")
                 for audio in audio_urls:
-                    if audio['index'] not in excluded_indices:
+                    if config["mode"] == "blacklist" and audio['index'] not in excluded_indices:
+                        print(f"编号: {audio['index']}, 曲名: {audio['title']}, 时长: {audio['duration']}")
+                    elif config["mode"] == "whitelist" and audio['index'] in included_indices:
                         print(f"编号: {audio['index']}, 曲名: {audio['title']}, 时长: {audio['duration']}")
             
         except ValueError as e:
@@ -232,12 +272,21 @@ def exclude_tracks(audio_urls):
                 print(f"调试信息：输入处理错误：{e}")
             continue
         
-        more_exclude = input('是否需要再次输入要排除的曲目？(y/n)：').strip().lower()
+        while True:
+            more_exclude = input('是否需要再次输入要排除或保留的曲目？(y/n)：').strip().lower()
+            if more_exclude in ['y', 'n']:
+                break
+            else:
+                print("无效输入，请输入 'y' 或 'n'。")
+        
         if more_exclude != 'y':
             break
     
-    # 过滤掉排除的曲目
-    filtered_urls = [audio for audio in audio_urls if audio['index'] not in excluded_indices]
+    # 根据模式过滤曲目
+    if config["mode"] == "blacklist":
+        filtered_urls = [audio for audio in audio_urls if audio['index'] not in excluded_indices]
+    elif config["mode"] == "whitelist":
+        filtered_urls = [audio for audio in audio_urls if audio['index'] in included_indices]
     
     if debug:
         # 调试信息：打印最终保留的曲目列表
