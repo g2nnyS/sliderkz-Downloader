@@ -26,8 +26,10 @@ def Init():
         "max_duration": 3600,
         "debug": False,
         "download_dir": "downloads",
-        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.131 Safari/537.36",  # 默认用户代理
-        "referer": "https://hayqbhgr.slider.kz/"  # 默认HTTP来源地址
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.131 Safari/537.36",
+        "referer": "https://hayqbhgr.slider.kz/",
+        "use_proxy": False,  # 默认不使用代理
+        "proxy": "http://127.0.0.1:8080"  # 默认代理服务器地址
     }
     config_file = 'config.json'
     config_error = "配置项有误！请检查配置文件。如果你不知道发生了什么故障，请删除目录下的config.json，程序会自动按照默认配置新建配置文件。"
@@ -62,13 +64,15 @@ def Init():
             input("按任意键退出")
 
     # 如果所有配置项均有效，更新全局变量
-    global base_url, max_duration, debug, download_dir, user_agent, referer
+    global base_url, max_duration, debug, download_dir, user_agent, referer, use_proxy, proxy
     base_url = config.get('base_url')
     max_duration = config.get('max_duration')
-    debug = config.get('debug', False)
-    download_dir = config.get('download_dir', "downloads")
-    user_agent = config.get('user_agent', "MyDownloadTool/1.0")
-    referer = config.get('referer', "https://hayqbhgr.slider.kz/")
+    debug = config.get('debug')
+    download_dir = config.get('download_dir')
+    user_agent = config.get('user_agent')
+    referer = config.get('referer')
+    use_proxy = config.get('use_proxy')
+    proxy = config.get('proxy')
     
     if debug:
         print("本次运行开启了调试模式。")
@@ -77,6 +81,8 @@ def Init():
         print(f"Debug：下载目录: {download_dir}")
         print(f"Debug：用户代理: {user_agent}")
         print(f"Debug：HTTP来源地址: {referer}")
+        print(f"Debug：是否使用代理: {use_proxy}")
+        print(f"Debug：代理服务器地址: {proxy}")
         print(f"Debug：调试模式: {debug}")
     
     print("初始化检查已完成！")
@@ -245,25 +251,40 @@ def download_audio_files(audio_urls):
         'Referer': referer
     }
 
+    proxies = {
+        "http": proxy,
+        "https": proxy
+    } if use_proxy else None
+
     for audio in audio_urls:
         url = audio['url']
-        title = audio['title'].replace(" ", "").replace("/", "_")
+        title = audio['title'].replace("/", "_")
         filename = f"{download_dir}/{title}.mp3"
         
-        print(f"正在下载: {title}.mp3")
-        response = requests.get(url, headers=headers)
-        
-        # 检查请求是否成功
-        if response.status_code == 200:
-            with open(filename, 'wb') as f:
-                f.write(response.content)
-            print(f"已保存: {filename}")
-        else:
-            print(f"下载 {title} 失败，状态码：{response.status_code}")
+        print(f"正在下载: {title}")
+
+        try:
+            with requests.get(url, headers=headers, proxies=proxies, timeout=10, stream=True) as response:
+                response.raise_for_status()
+                total_size = int(response.headers.get('content-length', 0))
+                chunk_size = 8192
+                downloaded_size = 0
+                with open(filename, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=chunk_size):
+                        f.write(chunk)
+                        downloaded_size += len(chunk)
+                        progress = downloaded_size / total_size * 100
+                        downloaded_mb = downloaded_size / (1024 * 1024)
+                        total_mb = total_size / (1024 * 1024)
+                        print(f"已下载: {downloaded_mb:.2f}/{total_mb:.2f} MB ({progress:.2f}%)", end='\r')
+
+            print(f"\n已保存: {filename}")
+        except requests.exceptions.RequestException as e:
+            print(f"下载 {title} 失败")
     
     print("所有文件下载完成！")
 
-
 Init()
+
 if __name__ == "__main__":
     main()
