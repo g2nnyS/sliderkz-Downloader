@@ -27,6 +27,7 @@ def Init():
         "download_dir": "downloads"  # 默认下载目录
     }
     config_file = 'config.json'
+    Config_error = "配置项有误！请检查配置文件。如果你不知道发生了什么故障，请删除目录下的config.json，程序会自动按照默认配置新建配置文件。" # 配置文件错误提示
 
     # 检查配置文件是否存在
     print("正在检查配置文件...")
@@ -43,18 +44,18 @@ def Init():
             config = json.load(f)
         except json.JSONDecodeError:
             print("配置文件格式错误，请确保文件为有效的 JSON 格式。")
-            print("配置项有误！请检查配置文件。如果你不知道发生了什么故障，请删除目录下的config.json，程序会自动按照默认配置新建配置文件。")
+            print(Config_error)
             input("按下任意键退出程序")  # 停止程序
 
     # 检查每个配置项是否存在并有效
     for key, value in default_config.items():
         if key not in config:
             print(f"配置文件中缺少配置项：{key}")
-            print("配置项有误！请检查配置文件。如果你不知道发生了什么故障，请删除目录下的config.json，程序会自动按照默认配置新建配置文件。")
+            print(Config_error)
             input("按下任意键退出程序")  # 停止程序
         if not isinstance(config[key], type(value)):
             print(f"配置项 {key} 的类型无效，期望类型为 {type(value).__name__}，但得到的是 {type(config[key]).__name__}")
-            print("配置项有误！请检查配置文件。如果你不知道发生了什么故障，请删除目录下的config.json，程序会自动按照默认配置新建配置文件。")
+            print(Config_error)
             input("按下任意键退出程序")  # 停止程序
 
     # 如果所有配置项均有效，更新全局变量
@@ -180,17 +181,24 @@ def exclude_tracks(audio_urls):
         
         try:
             indices = [int(i.strip()) for i in exclude_input.split(',')]
-            excluded_indices.update(indices)
+            new_exclusions = [index for index in indices if index not in excluded_indices]
+            ignored_exclusions = [index for index in indices if index in excluded_indices]
+            
+            # 更新已排除的索引集合
+            excluded_indices.update(new_exclusions)
             
             # 显示已排除的曲目
-            print("你已经排除：")
-            for index in indices:
-                audio = next((audio for audio in audio_urls if audio['index'] == index), None)
-                if audio:
-                    print(f"编号: {audio['index']}, 曲名: {audio['title']}, 时长: {audio['duration']}")
-                else:
-                    if debug:
-                        print(f"调试信息：编号 {index} 对应的音频未找到，可能已经被排除。")
+            if new_exclusions:
+                print("你已经排除：")
+                for index in new_exclusions:
+                    audio = next((audio for audio in audio_urls if audio['index'] == index), None)
+                    if audio:
+                        print(f"编号: {audio['index']}, 曲名: {audio['title']}, 时长: {audio['duration']}")
+            
+            # 提示被忽略的排除项目（如果有）
+            if ignored_exclusions:
+                print("以下编号已经被排除，忽略它们：")
+                print(", ".join(map(str, ignored_exclusions)))
             
             if debug:
                 # 调试信息：打印排除后的剩余曲目
@@ -221,7 +229,6 @@ def exclude_tracks(audio_urls):
     return filtered_urls
 
 def download_audio_files(audio_urls):
-    download_dir = 'downloads'
     if not os.path.exists(download_dir):
         os.makedirs(download_dir)
 
@@ -231,9 +238,9 @@ def download_audio_files(audio_urls):
         filename = f"{download_dir}/{title}.mp3"
         
         print(f"正在下载: {title}")
-        response = requests.get(url)
+        music_response = requests.get(url)
         with open(filename, 'wb') as f:
-            f.write(response.content)
+            f.write(music_response.content)
         print(f"已保存: {filename}")
     
     print("所有文件下载完成！")
