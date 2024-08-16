@@ -181,7 +181,8 @@ def parse_audio_info(json_data, max_duration):
 
 def exclude_tracks(audio_urls):
     excluded_indices = set()
-    
+    all_excluded_tracks = []
+
     # 打印初始的音频文件列表
     print("音频文件列表:")
     for audio in audio_urls:
@@ -201,13 +202,17 @@ def exclude_tracks(audio_urls):
             # 更新已排除的索引集合
             excluded_indices.update(new_exclusions)
             
+            # 更新所有被排除的曲目列表
+            for index in new_exclusions:
+                audio = next((audio for audio in audio_urls if audio['index'] == index), None)
+                if audio:
+                    all_excluded_tracks.append(audio)
+            
             # 显示已排除的曲目
             if new_exclusions:
                 print("你已经排除：")
-                for index in new_exclusions:
-                    audio = next((audio for audio in audio_urls if audio['index'] == index), None)
-                    if audio:
-                        print(f"编号: {audio['index']}, 曲名: {audio['title']}, 时长: {audio['duration']}")
+                for audio in all_excluded_tracks:
+                    print(f"编号: {audio['index']}, 曲名: {audio['title']}, 时长: {audio['duration']}")
             
             # 提示被忽略的排除项目（如果有）
             if ignored_exclusions:
