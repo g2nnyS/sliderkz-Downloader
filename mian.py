@@ -1,9 +1,7 @@
 # -*- coding: utf-8 -*-
-
 import os
 import json
 import requests
-import re
 from urllib.parse import quote
 
 start_text = """
@@ -19,8 +17,11 @@ start_text = """
 """
 
 print(start_text)
+config = None
+
 
 def Init():
+    global config
     default_config = {
         "base_url": "https://hayqbhgr.slider.kz/vk_auth.php?q=",
         "max_duration": 3600,
@@ -35,6 +36,9 @@ def Init():
     config_file = 'config.json'
     config_error = "配置项有误！请检查配置文件。如果你不知道发生了什么故障，请删除目录下的config.json，程序会自动按照默认配置新建配置文件。"
 
+    # 声明全局变量
+    global base_url, max_duration, debug, download_dir, user_agent, referer, use_proxy, proxy, mode
+
     # 检查配置文件是否存在
     print("正在检查配置文件...")
     if not os.path.exists(config_file):
@@ -42,7 +46,7 @@ def Init():
         with open(config_file, 'w') as f:
             json.dump(default_config, f, indent=4)
         print(f'配置文件 {config_file} 不存在，已创建默认配置。')
-        return
+        return default_config
 
     # 读取配置文件
     with open(config_file, 'r') as f:
@@ -52,6 +56,7 @@ def Init():
             print("配置文件格式错误，请确保文件为有效的 JSON 格式。")
             print(config_error)
             input("按任意键退出")
+            return default_config
 
     # 检查每个配置项是否存在并有效
     for key, value in default_config.items():
@@ -63,9 +68,11 @@ def Init():
             print(f"配置项 {key} 的类型无效，期望类型为 {type(value).__name__}，但得到的是 {type(config[key]).__name__}")
             print(config_error)
             input("按任意键退出")
+        if config.get('mode') not in ["blacklist", "whitelist"]:
+            print(f"模式 {config.get('mode')} 无效，请输入有效的模式（blacklist/whitelist）")
+            input("按任意键退出")
 
     # 如果所有配置项均有效，更新全局变量
-    global base_url, max_duration, debug, download_dir, user_agent, referer, use_proxy, proxy
     base_url = config.get('base_url')
     max_duration = config.get('max_duration')
     debug = config.get('debug')
@@ -97,6 +104,7 @@ def Init():
     elif mode == "whitelist":
         print("现在我们正工作在白名单模式下。")
         print("在白名单模式下，在筛选时，你需要输入要保留的曲目编号。")
+    return config
 
 
 def main():
@@ -107,7 +115,7 @@ def main():
     audio_urls = parse_audio_info(json_data, max_duration)
 
     # 让用户排除不需要的音频
-    audio_urls = exclude_tracks(audio_urls)
+    audio_urls = exclude_tracks(audio_urls, config)
 
     # 下载剩余的音频文件
     download_audio_files(audio_urls)
@@ -190,7 +198,7 @@ def parse_audio_info(json_data, max_duration):
     
     return audio_urls
 
-def exclude_tracks(audio_urls):
+def exclude_tracks(audio_urls, config):
     excluded_indices = set()
     included_indices = set()
     all_excluded_tracks = []
@@ -338,7 +346,6 @@ def download_audio_files(audio_urls):
     
     print("所有文件下载完成！")
 
-Init()
-
 if __name__ == "__main__":
+    Init()
     main()
