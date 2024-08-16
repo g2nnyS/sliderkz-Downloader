@@ -122,6 +122,14 @@ def main():
     # 下载剩余的音频文件
     download_audio_files(audio_urls)
 
+    # 询问是否再次搜索
+    while True:
+        search_again = input('是否需要再次搜索？(y/n)：').strip().lower()
+        if search_again in ['y', 'n']:
+            break
+        else:
+            print("无效输入，请输入 'y' 或 'n'。")
+
 def search():
     input_prompt = input('请输入要搜索的内容：')
     while not input_prompt:
