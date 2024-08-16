@@ -1,4 +1,5 @@
 {
     "base_url": "https://hayqbhgr.slider.kz/vk_auth.php?q=",
-    "max_duration": 3600
+    "max_duration": 3600,
+    "debug": true
 }
