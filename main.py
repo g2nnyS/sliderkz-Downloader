@@ -328,7 +328,7 @@ def sanitize_filename(filename):
     # 移除不安全的字符，只保留字母、数字、下划线和点
     return re.sub(r'[^a-zA-Z0-9_\-.]', '_', filename)
 
-def download_audio(audio, download_dir, headers, proxies, retries=0):
+def download_audio(audio, download_dir, headers, proxies, retries=0, failed_downloads=None):
     url = audio['url']
     title = sanitize_filename(audio['title'])
     filename = os.path.join(download_dir, f"{title}.mp3")
@@ -354,9 +354,11 @@ def download_audio(audio, download_dir, headers, proxies, retries=0):
     except requests.exceptions.RequestException as e:
         if retries < max_retries:
             print(f"下载 {title} 失败，重试中... ({retries + 1}/{max_retries})")
-            download_audio(audio, download_dir, headers, proxies, retries + 1)
+            download_audio(audio, download_dir, headers, proxies, retries + 1, failed_downloads)
         else:
             print(f"下载 {title} 失败，已达到最大重试次数。")
+            if failed_downloads is not None:
+                failed_downloads.append(audio)
 
 def download_audio_files(audio_urls):
     if not os.path.exists(download_dir):
@@ -372,10 +374,22 @@ def download_audio_files(audio_urls):
         "https": proxy
     } if use_proxy else None
 
+    failed_downloads = []
+
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(download_audio, audio, download_dir, headers, proxies) for audio in audio_urls]
+        futures = [executor.submit(download_audio, audio, download_dir, headers, proxies, 0, failed_downloads) for audio in audio_urls]
         for future in futures:
             future.result()  # 等待所有线程完成
+
+    if failed_downloads:
+        print("以下文件下载失败，正在重新尝试下载：")
+        for audio in failed_downloads:
+            print(f"曲名: {audio['title']}, URL: {audio['url']}")
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(download_audio, audio, download_dir, headers, proxies, 0, None) for audio in failed_downloads]
+            for future in futures:
+                future.result()  # 等待所有线程完成
 
     print("所有文件下载完成！")
 
