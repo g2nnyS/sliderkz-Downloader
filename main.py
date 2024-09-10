@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
 import os
+from time import sleep
+import urllib3
 import json
 import requests
 import re
 from urllib.parse import quote
-import threading
-import warnings
-from time import sleep
-from urllib3.exceptions import InsecureRequestWarning
-warnings.simplefilter('ignore', InsecureRequestWarning)
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
+import warnings
+from urllib3.exceptions import InsecureRequestWarning
 
 start_text = """
       _  _      _                 _         
@@ -42,15 +42,13 @@ def Init():
         "mode": "blacklist",
         "max_workers": 5,
         "max_retries": 3,
-        "chunk_size": 8192,
-        "num_threads": 4,
-        "use_multithreading": False,
-        "disable_ssl_warnings": True  # 添加多线程开关
+        "disable_ssl_warnings": True,
+        "max_concurrent_downloads": 3  # 添加同时下载的歌曲数量
     }
     config_file = 'config.json'
     config_error = "配置项有误！请检查配置文件。如果你不知道发生了什么故障，请删除目录下的config.json，程序会自动按照默认配置新建配置文件。"
 
-    global base_url, max_duration, min_duration, debug, download_dir, temp_dir, user_agent, referer, use_proxy, proxy, mode, max_workers, max_retries, chunk_size, num_threads, use_multithreading, disable_ssl_warnings
+    global base_url, max_duration, min_duration, debug, download_dir, temp_dir, user_agent, referer, use_proxy, proxy, mode, max_workers, max_retries, disable_ssl_warnings, max_concurrent_downloads
 
     print("正在检查配置文件...")
     if not os.path.exists(config_file):
@@ -95,10 +93,8 @@ def Init():
     mode = config.get('mode')
     max_workers = config.get('max_workers')
     max_retries = config.get('max_retries')
-    chunk_size = config.get('chunk_size')
-    num_threads = config.get('num_threads')
-    use_multithreading = config.get('use_multithreading')
     disable_ssl_warnings = config.get('disable_ssl_warnings')
+    max_concurrent_downloads = config.get('max_concurrent_downloads')
 
     if disable_ssl_warnings:
         warnings.simplefilter('ignore', InsecureRequestWarning)
@@ -120,10 +116,8 @@ def Init():
         print(f"Debug：模式: {mode}")
         print(f"Debug：最大线程数: {max_workers}")
         print(f"Debug：最大重试次数: {max_retries}")
-        print(f"Debug：块大小: {chunk_size}")
-        print(f"Debug：每个文件的线程数: {num_threads}")
-        print(f"Debug：是否使用多线程: {use_multithreading}")
         print(f"Debug：是否禁用 SSL 警告: {disable_ssl_warnings}")
+        print(f"Debug：同时下载的歌曲数量: {max_concurrent_downloads}")
 
     print("初始化检查已完成！")
     print("作者在此严肃提醒：在使用本工具时，请认真留意每一行输出，以免造成不可挽回的后果！  @Ganyu_Genshin")
@@ -327,97 +321,36 @@ def clean_filename(filename):
     filename = os.path.basename(filename)
     return filename
 
-def download_audio(audio, download_dir, headers, proxies, retries=0, failed_downloads=None, chunk_size=8192):
+def download_audio(audio, download_dir, headers, proxies, retries=0, failed_downloads=None):
     url = audio['url']
     title = clean_filename(audio['title'])  # 清理文件名
     filename = os.path.join(download_dir, f"{title}.mp3")
-    temp_filename = os.path.join(temp_dir, f"{title}.part")
 
     print(f"正在下载: {title}")
 
-    if use_multithreading:
-        try:
-            response = requests.head(url, headers=headers, proxies=proxies, timeout=10, verify=False)
+    try:
+        with requests.get(url, headers=headers, proxies=proxies, timeout=10, stream=True, verify=False) as response:
             response.raise_for_status()
             total_size = int(response.headers.get('content-length', 0))
+            with open(filename, 'wb') as f, tqdm(
+                total=total_size, unit='B', unit_scale=True, desc=title
+            ) as pbar:
+                for chunk in response.iter_content():
+                    f.write(chunk)
+                    pbar.update(len(chunk))
 
-            def download_chunk(start, end, index, retries=0):
-                headers_range = headers.copy()
-                headers_range['Range'] = f"bytes={start}-{end}"
-                chunk_filename = f"{temp_filename}.part{index}"
-                while retries < max_retries:
-                    try:
-                        with requests.get(url, headers=headers_range, proxies=proxies, timeout=10, stream=True, verify=False) as response:
-                            response.raise_for_status()
-                            with open(chunk_filename, 'wb') as f:
-                                for chunk in response.iter_content(chunk_size=chunk_size):
-                                    f.write(chunk)
-                        break
-                    except requests.exceptions.RequestException as e:
-                        retries += 1
-                        print(f"下载块 {index} 失败，重试中... ({retries}/{max_retries})")
-                        if debug:
-                            print(f"失败原因: {e}")
-                else:
-                    raise Exception(f"下载块 {index} 失败，已达到最大重试次数。")
-
-            chunk_size = total_size // num_threads
-            threads = []
-            for i in range(num_threads):
-                start = i * chunk_size
-                end = start + chunk_size - 1 if i < num_threads - 1 else total_size - 1
-                thread = threading.Thread(target=download_chunk, args=(start, end, i))
-                threads.append(thread)
-                thread.start()
-
-            for thread in threads:
-                thread.join()
-
-            with open(filename, 'wb') as f:
-                for i in range(num_threads):
-                    chunk_filename = f"{temp_filename}.part{i}"
-                    if not os.path.exists(chunk_filename):
-                        raise FileNotFoundError(f"块文件 {chunk_filename} 不存在，")
-                    with open(chunk, 'rb') as chunk_file:
-                        f.write(chunk_file.read())
-                    os.remove(chunk_filename)
-
-            print(f"\n已保存: {filename}")
-        except Exception as e:
-            error_message = str(e)
-            if retries < max_retries:
-                print(f"下载 {title} 失败，重试中... ({retries + 1}/{max_retries})")
-                if debug:
-                    print(f"失败原因: {error_message}")
-                download_audio(audio, download_dir, headers, proxies, retries + 1, failed_downloads, chunk_size)
-            else:
-                print(f"下载 {title} 失败，已达到最大重试次数。失败原因: {error_message}")
-                if failed_downloads is not None:
-                    failed_downloads.append((audio, error_message))
-    else:
-        try:
-            with requests.get(url, headers=headers, proxies=proxies, timeout=10, stream=True, verify=False) as response:
-                response.raise_for_status()
-                total_size = int(response.headers.get('content-length', 0))
-                with open(filename, 'wb') as f, tqdm(
-                    total=total_size, unit='B', unit_scale=True, desc=title
-                ) as pbar:
-                    for chunk in response.iter_content(chunk_size=chunk_size):
-                        f.write(chunk)
-                        pbar.update(len(chunk))
-
-            print(f"\n已保存: {filename}")
-        except requests.exceptions.RequestException as e:
-            error_message = str(e)
-            if retries < max_retries:
-                print(f"下载 {title} 失败，重试中... ({retries + 1}/{max_retries})")
-                if debug:
-                    print(f"失败原因: {error_message}")
-                download_audio(audio, download_dir, headers, proxies, retries + 1, failed_downloads, chunk_size)
-            else:
-                print(f"下载 {title} 失败，已达到最大重试次数。失败原因: {error_message}")
-                if failed_downloads is not None:
-                    failed_downloads.append((audio, error_message))
+        print(f"\n已保存: {filename}")
+    except requests.exceptions.RequestException as e:
+        error_message = str(e)
+        if retries < max_retries:
+            print(f"下载 {title} 失败，重试中... ({retries + 1}/{max_retries})")
+            if debug:
+                print(f"失败原因: {error_message}")
+            download_audio(audio, download_dir, headers, proxies, retries + 1, failed_downloads)
+        else:
+            print(f"下载 {title} 失败，已达到最大重试次数。失败原因: {error_message}")
+            if failed_downloads is not None:
+                failed_downloads.append((audio, error_message))
 
 def download_audio_files(audio_urls):
     if not os.path.exists(download_dir):
@@ -435,8 +368,15 @@ def download_audio_files(audio_urls):
 
     failed_downloads = []
 
-    for audio in audio_urls:
-        download_audio(audio, download_dir, headers, proxies, 0, failed_downloads, chunk_size)
+    with ThreadPoolExecutor(max_workers=max_concurrent_downloads) as executor:
+        future_to_audio = {executor.submit(download_audio, audio, download_dir, headers, proxies, 0, failed_downloads): audio for audio in audio_urls}
+        for future in as_completed(future_to_audio):
+            audio = future_to_audio[future]
+            try:
+                future.result()
+            except Exception as e:
+                print(f"下载 {audio['title']} 失败，错误: {e}")
+                failed_downloads.append((audio, str(e)))
 
     if failed_downloads:
         print("以下文件下载失败，正在重新尝试下载：")
@@ -446,7 +386,7 @@ def download_audio_files(audio_urls):
                 print(f"失败原因: {error_message}")
         
         for audio, _ in failed_downloads:
-            download_audio(audio, download_dir, headers, proxies, 0, None, chunk_size)
+            download_audio(audio, download_dir, headers, proxies, 0, None)
 
     print("所有文件下载完成！")
 
@@ -514,12 +454,6 @@ def teach(): # 教程
     print("max_workers: 最大线程数。")
     sleep(2)
     print("max_retries: 最大重试次数。")
-    sleep(2)
-    print("chunk_size: 块大小。")
-    sleep(2)
-    print("num_threads: 每个文件的线程数。")
-    sleep(2)
-    print("use_multithreading: 是否使用多线程下载。")
     sleep(2)
     print("disable_ssl_warnings: 是否禁用 SSL 警告。")
     sleep(2)

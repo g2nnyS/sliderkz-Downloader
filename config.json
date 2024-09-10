@@ -12,8 +12,6 @@
     "mode": "blacklist",
     "max_workers": 5,
     "max_retries": 3,
-    "chunk_size": 8192,
-    "num_threads": 4,
-    "use_multithreading": false,
-    "disable_ssl_warnings": true
+    "disable_ssl_warnings": true,
+    "max_concurrent_downloads": 3
 }
