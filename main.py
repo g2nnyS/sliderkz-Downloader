@@ -2,15 +2,17 @@
 import os
 import json
 import requests
+import re
 from urllib.parse import quote
+from concurrent.futures import ThreadPoolExecutor
 
 start_text = """
       _  _      _                 _         
      | |(_)    | |               | |        
- ___ | | _   __| |  ___  _ __    | | __ ____
-/ __|| || | / _` | / _ \| '__|   | |/ /|_  /
-\__ \| || || (_| ||  __/| |    _ |   <  / / 
-|___/|_||_| \__,_| \___||_|   (_)|_|\_\/___|
+ ___ | | _   __| |  ___  _ __    | | __ ____ 
+/ __|| || | / _` | / _ \| '__|   | |/ /|_  / 
+\__ \| || || (_| ||  __/| |    _ |   <  / /  
+|___/|_||_| \__,_| \___||_|   (_)|_|\_\/___| 
         Download Tool for Slider.kz                                                                                                                                                                                          
     Thanks for using!     by Ganyu_Genshin
 
@@ -18,7 +20,6 @@ start_text = """
 
 print(start_text)
 config = None
-
 
 def Init():
     default_config = {
@@ -31,13 +32,15 @@ def Init():
         "referer": "https://hayqbhgr.slider.kz/",
         "use_proxy": False,  # 默认不使用代理
         "proxy": "http://127.0.0.1:8080",  # 默认代理服务器地址
-        "mode": "blacklist"  # 默认模式为黑名单
+        "mode": "blacklist",  # 默认模式为黑名单
+        "max_workers": 5,  # 默认线程数
+        "max_retries": 3  # 默认最大重试次数
     }
     config_file = 'config.json'
     config_error = "配置项有误！请检查配置文件。如果你不知道发生了什么故障，请删除目录下的config.json，程序会自动按照默认配置新建配置文件。"
 
     # 声明全局变量
-    global base_url, max_duration, min_duration, debug, download_dir, user_agent, referer, use_proxy, proxy, mode
+    global base_url, max_duration, min_duration, debug, download_dir, user_agent, referer, use_proxy, proxy, mode, max_workers, max_retries
 
     # 检查配置文件是否存在
     print("正在检查配置文件...")
@@ -83,6 +86,8 @@ def Init():
     use_proxy = config.get('use_proxy')
     proxy = config.get('proxy')
     mode = config.get('mode')
+    max_workers = config.get('max_workers')
+    max_retries = config.get('max_retries')
     
     if debug:
         print("[重要提醒]本次运行开启了调试模式。")
@@ -98,6 +103,8 @@ def Init():
         print(f"Debug：代理服务器地址: {proxy}")
         print(f"Debug：调试模式: {debug}")
         print(f"Debug：模式: {mode}")
+        print(f"Debug：最大线程数: {max_workers}")
+        print(f"Debug：最大重试次数: {max_retries}")
     
     print("初始化检查已完成！")
     print("作者在此严肃提醒：在使用本工具时，请认真留意每一行输出，以免造成不可挽回的后果！  @Ganyu_Genshin")
@@ -108,7 +115,6 @@ def Init():
         print("现在我们正工作在白名单模式下。")
         print("在白名单模式下，在筛选时，你需要输入要保留的曲目编号。")
     return config
-
 
 def main():
     # 调用 search 函数获取 JSON 数据
@@ -318,6 +324,40 @@ def exclude_tracks(audio_urls, config):
     
     return filtered_urls
 
+def sanitize_filename(filename):
+    # 移除不安全的字符，只保留字母、数字、下划线和点
+    return re.sub(r'[^a-zA-Z0-9_\-.]', '_', filename)
+
+def download_audio(audio, download_dir, headers, proxies, retries=0):
+    url = audio['url']
+    title = sanitize_filename(audio['title'])
+    filename = os.path.join(download_dir, f"{title}.mp3")
+    
+    print(f"正在下载: {title}")
+
+    try:
+        with requests.get(url, headers=headers, proxies=proxies, timeout=10, stream=True) as response:
+            response.raise_for_status()
+            total_size = int(response.headers.get('content-length', 0))
+            chunk_size = 8192
+            downloaded_size = 0
+            with open(filename, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=chunk_size):
+                    f.write(chunk)
+                    downloaded_size += len(chunk)
+                    progress = downloaded_size / total_size * 100
+                    downloaded_mb = downloaded_size / (1024 * 1024)
+                    total_mb = total_size / (1024 * 1024)
+                    print(f"已下载: {downloaded_mb:.2f}/{total_mb:.2f} MB ({progress:.2f}%)", end='\r')
+
+        print(f"\n已保存: {filename}")
+    except requests.exceptions.RequestException as e:
+        if retries < max_retries:
+            print(f"下载 {title} 失败，重试中... ({retries + 1}/{max_retries})")
+            download_audio(audio, download_dir, headers, proxies, retries + 1)
+        else:
+            print(f"下载 {title} 失败，已达到最大重试次数。")
+
 def download_audio_files(audio_urls):
     if not os.path.exists(download_dir):
         os.makedirs(download_dir)
@@ -332,32 +372,11 @@ def download_audio_files(audio_urls):
         "https": proxy
     } if use_proxy else None
 
-    for audio in audio_urls:
-        url = audio['url']
-        title = audio['title'].replace("/", "_")
-        filename = f"{download_dir}/{title}.mp3"
-        
-        print(f"正在下载: {title}")
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(download_audio, audio, download_dir, headers, proxies) for audio in audio_urls]
+        for future in futures:
+            future.result()  # 等待所有线程完成
 
-        try:
-            with requests.get(url, headers=headers, proxies=proxies, timeout=10, stream=True) as response:
-                response.raise_for_status()
-                total_size = int(response.headers.get('content-length', 0))
-                chunk_size = 8192
-                downloaded_size = 0
-                with open(filename, 'wb') as f:
-                    for chunk in response.iter_content(chunk_size=chunk_size):
-                        f.write(chunk)
-                        downloaded_size += len(chunk)
-                        progress = downloaded_size / total_size * 100
-                        downloaded_mb = downloaded_size / (1024 * 1024)
-                        total_mb = total_size / (1024 * 1024)
-                        print(f"已下载: {downloaded_mb:.2f}/{total_mb:.2f} MB ({progress:.2f}%)", end='\r')
-
-            print(f"\n已保存: {filename}")
-        except requests.exceptions.RequestException as e:
-            print(f"下载 {title} 失败")
-    
     print("所有文件下载完成！")
 
 if __name__ == "__main__":
