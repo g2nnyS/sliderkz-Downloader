@@ -13,7 +13,6 @@ start_text = """
 |___/|_||_| \__,_| \___||_|   (_)|_|\_\/___|
         Download Tool for Slider.kz                                                                                                                                                                                          
     Thanks for using!     by Ganyu_Genshin
-作者在此温馨提醒：在使用本工具时，请认真留意每一行输出
 
 """
 
@@ -101,6 +100,7 @@ def Init():
         print(f"Debug：模式: {mode}")
     
     print("初始化检查已完成！")
+    print("作者在此严肃提醒：在使用本工具时，请认真留意每一行输出，以免造成不可挽回的后果！  @Ganyu_Genshin")
     if mode == "blacklist":
         print("现在我们正工作在黑名单模式下。")
         print("在黑名单模式下，在筛选时，你需要输入要排除的曲目编号。")
