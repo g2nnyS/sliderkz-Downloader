@@ -10,8 +10,7 @@
     "use_proxy": false,
     "proxy": "http://127.0.0.1:8080",
     "mode": "blacklist",
-    "max_workers": 5,
     "max_retries": 3,
     "disable_ssl_warnings": true,
-    "max_concurrent_downloads": 3
+    "max_concurrent_downloads": 5
 }

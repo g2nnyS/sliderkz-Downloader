@@ -40,15 +40,14 @@ def Init():
         "use_proxy": False,
         "proxy": "http://127.0.0.1:8080",
         "mode": "blacklist",
-        "max_workers": 5,
         "max_retries": 3,
-        "disable_ssl_warnings": True,
+        "disable_ssl_warnings": False,
         "max_concurrent_downloads": 3  # 添加同时下载的歌曲数量
     }
     config_file = 'config.json'
     config_error = "配置项有误！请检查配置文件。如果你不知道发生了什么故障，请删除目录下的config.json，程序会自动按照默认配置新建配置文件。"
 
-    global base_url, max_duration, min_duration, debug, download_dir, temp_dir, user_agent, referer, use_proxy, proxy, mode, max_workers, max_retries, disable_ssl_warnings, max_concurrent_downloads
+    global base_url, max_duration, min_duration, debug, download_dir, temp_dir, user_agent, referer, use_proxy, proxy, mode, max_retries, disable_ssl_warnings, max_concurrent_downloads
 
     print("正在检查配置文件...")
     if not os.path.exists(config_file):
@@ -91,7 +90,6 @@ def Init():
     use_proxy = config.get('use_proxy')
     proxy = config.get('proxy')
     mode = config.get('mode')
-    max_workers = config.get('max_workers')
     max_retries = config.get('max_retries')
     disable_ssl_warnings = config.get('disable_ssl_warnings')
     max_concurrent_downloads = config.get('max_concurrent_downloads')
@@ -114,7 +112,6 @@ def Init():
         print(f"Debug：代理服务器地址: {proxy}")
         print(f"Debug：调试模式: {debug}")
         print(f"Debug：模式: {mode}")
-        print(f"Debug：最大线程数: {max_workers}")
         print(f"Debug：最大重试次数: {max_retries}")
         print(f"Debug：是否禁用 SSL 警告: {disable_ssl_warnings}")
         print(f"Debug：同时下载的歌曲数量: {max_concurrent_downloads}")
@@ -315,15 +312,13 @@ def exclude_tracks(audio_urls, config):
 
 # 清理文件名中的非法字符
 def clean_filename(filename):
-    # 移除非法字符
     filename = re.sub(r'[\/:*?"<>|]', '_', filename)
-    # 确保文件名不包含路径分隔符
     filename = os.path.basename(filename)
     return filename
 
-def download_audio(audio, download_dir, headers, proxies, retries=0, failed_downloads=None):
+def download_audio(audio, download_dir, headers, proxies, retries=0):
     url = audio['url']
-    title = clean_filename(audio['title'])  # 清理文件名
+    title = clean_filename(audio['title'])
     filename = os.path.join(download_dir, f"{title}.mp3")
 
     print(f"正在下载: {title}")
@@ -335,22 +330,15 @@ def download_audio(audio, download_dir, headers, proxies, retries=0, failed_down
             with open(filename, 'wb') as f, tqdm(
                 total=total_size, unit='B', unit_scale=True, desc=title
             ) as pbar:
-                for chunk in response.iter_content():
+                for chunk in response.iter_content(chunk_size=8192):
                     f.write(chunk)
                     pbar.update(len(chunk))
 
         print(f"\n已保存: {filename}")
+        return True
     except requests.exceptions.RequestException as e:
-        error_message = str(e)
-        if retries < max_retries:
-            print(f"下载 {title} 失败，重试中... ({retries + 1}/{max_retries})")
-            if debug:
-                print(f"失败原因: {error_message}")
-            download_audio(audio, download_dir, headers, proxies, retries + 1, failed_downloads)
-        else:
-            print(f"下载 {title} 失败，已达到最大重试次数。失败原因: {error_message}")
-            if failed_downloads is not None:
-                failed_downloads.append((audio, error_message))
+        print(f"下载 {title} 失败，错误: {e}")
+        return False
 
 def download_audio_files(audio_urls):
     if not os.path.exists(download_dir):
@@ -366,33 +354,33 @@ def download_audio_files(audio_urls):
         "https": proxy
     } if use_proxy else None
 
-    failed_downloads = []
+    failed_downloads = audio_urls.copy()
+    max_retries = 3
 
-    with ThreadPoolExecutor(max_workers=max_concurrent_downloads) as executor:
-        future_to_audio = {executor.submit(download_audio, audio, download_dir, headers, proxies, 0, failed_downloads): audio for audio in audio_urls}
-        for future in as_completed(future_to_audio):
-            audio = future_to_audio[future]
-            try:
-                future.result()
-            except Exception as e:
-                print(f"下载 {audio['title']} 失败，错误: {e}")
-                failed_downloads.append((audio, str(e)))
+    for attempt in range(max_retries):
+        if not failed_downloads:
+            break
+
+        print(f"开始第 {attempt + 1} 次下载尝试...")
+
+        with ThreadPoolExecutor(max_workers=max_concurrent_downloads) as executor:
+            future_to_audio = {executor.submit(download_audio, audio, download_dir, headers, proxies): audio for audio in failed_downloads}
+            failed_downloads = []
+
+            for future in as_completed(future_to_audio):
+                audio = future_to_audio[future]
+                if not future.result():
+                    failed_downloads.append(audio)
 
     if failed_downloads:
-        print("以下文件下载失败，正在重新尝试下载：")
-        for audio, error_message in failed_downloads:
+        print("以下文件下载失败，已达到最大重试次数：")
+        for audio in failed_downloads:
             print(f"曲名: {audio['title']}, URL: {audio['url']}")
-            if debug:
-                print(f"失败原因: {error_message}")
-        
-        for audio, _ in failed_downloads:
-            download_audio(audio, download_dir, headers, proxies, 0, None)
 
     print("所有文件下载完成！")
 
 def main():
     global config
-    config = Init()
     # 调用 search 函数获取 JSON 数据
     json_data = search()
 
@@ -413,6 +401,7 @@ def main():
         elif search_again == 'n':
             print("感谢使用！")
             input("按任意键退出")
+            exit()
         else:
             print("无效输入，请输入 'y' 或 'n'。")
 
@@ -451,9 +440,7 @@ def teach(): # 教程
     sleep(2)
     print("黑名单模式: 你需要输入要排除的曲目编号。")
     sleep(2)
-    print("max_workers: 最大线程数。")
-    sleep(2)
-    print("max_retries: 最大重试次数。")
+    print("max_concurrent_downloads: 最大重试次数。")
     sleep(2)
     print("disable_ssl_warnings: 是否禁用 SSL 警告。")
     sleep(2)
@@ -466,4 +453,5 @@ def teach(): # 教程
     quit()
 
 if __name__ == "__main__":
+    config = Init()
     main()
