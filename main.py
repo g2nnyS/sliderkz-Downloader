@@ -13,6 +13,7 @@ start_text = """
 |___/|_||_| \__,_| \___||_|   (_)|_|\_\/___|
         Download Tool for Slider.kz                                                                                                                                                                                          
     Thanks for using!     by Ganyu_Genshin
+作者在此温馨提醒：在使用本工具时，请认真留意每一行输出
 
 """
 
