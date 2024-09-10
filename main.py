@@ -6,6 +6,7 @@ import re
 from urllib.parse import quote
 import threading
 import warnings
+from time import sleep
 from urllib3.exceptions import InsecureRequestWarning
 warnings.simplefilter('ignore', InsecureRequestWarning)
 from tqdm import tqdm
@@ -56,6 +57,7 @@ def Init():
         with open(config_file, 'w') as f:
             json.dump(default_config, f, indent=4)
         print(f'配置文件 {config_file} 不存在，已创建默认配置。')
+        teach()
         return default_config
 
     with open(config_file, 'r') as f:
@@ -375,7 +377,7 @@ def download_audio(audio, download_dir, headers, proxies, retries=0, failed_down
                 for i in range(num_threads):
                     chunk_filename = f"{temp_filename}.part{i}"
                     if not os.path.exists(chunk_filename):
-                        raise FileNotFoundError(f"块文件 {chunk_filename} 不存在，。")
+                        raise FileNotFoundError(f"块文件 {chunk_filename} 不存在，")
                     with open(chunk, 'rb') as chunk_file:
                         f.write(chunk_file.read())
                     os.remove(chunk_filename)
@@ -389,9 +391,7 @@ def download_audio(audio, download_dir, headers, proxies, retries=0, failed_down
                     print(f"失败原因: {error_message}")
                 download_audio(audio, download_dir, headers, proxies, retries + 1, failed_downloads, chunk_size)
             else:
-                print(f"下载 {title} 失败，已达到最大重试次数。")
-                if debug:
-                    print(f"失败原因: {error_message}")
+                print(f"下载 {title} 失败，已达到最大重试次数。失败原因: {error_message}")
                 if failed_downloads is not None:
                     failed_downloads.append((audio, error_message))
     else:
@@ -415,9 +415,7 @@ def download_audio(audio, download_dir, headers, proxies, retries=0, failed_down
                     print(f"失败原因: {error_message}")
                 download_audio(audio, download_dir, headers, proxies, retries + 1, failed_downloads, chunk_size)
             else:
-                print(f"下载 {title} 失败，已达到最大重试次数。")
-                if debug:
-                    print(f"失败原因: {error_message}")
+                print(f"下载 {title} 失败，已达到最大重试次数。失败原因: {error_message}")
                 if failed_downloads is not None:
                     failed_downloads.append((audio, error_message))
 
@@ -477,6 +475,61 @@ def main():
             input("按任意键退出")
         else:
             print("无效输入，请输入 'y' 或 'n'。")
+
+def teach(): # 教程
+    print("侦测到初次启动，教程准备中...")
+    sleep(3)
+    print("欢迎使用Slider.kz下载工具！")
+    sleep(2)
+    print("本工具可以帮助你下载Slider.kz上的音频文件。")
+    sleep(2)
+    print("为了你能更好的使用该工具，我们将花一点时间向你解释配置文件中各个项目的作用")
+    sleep(2)
+    print("base_url: Slider.kz的搜索URL，不要修改。")
+    sleep(2)
+    print("max_duration: 最大时长，单位为秒。")
+    sleep(2)
+    print("min_duration: 最小时长，单位为秒。")
+    sleep(2)
+    print("debug: 是否开启调试模式，如果你不是开发人员，将其设置为false。")
+    sleep(2)
+    print("download_dir: 下载目录。")
+    sleep(2)
+    print("temp_dir: 临时文件目录，用于在多线程下载时存储临时文件。")
+    sleep(2)
+    print("user_agent: 用户代理，用于伪装请求，最好不要修改。")
+    sleep(2)
+    print("referer: HTTP来源地址，用于伪装请求，最好不要修改。")
+    sleep(2)
+    print("use_proxy: 是否使用代理。")
+    sleep(2)
+    print("proxy: 代理服务器地址。")
+    sleep(2)
+    print("mode: 模式，有黑名单模式和白名单模式。")
+    sleep(2)
+    print("白名单模式: 你需要输入要保留的曲目编号。")
+    sleep(2)
+    print("黑名单模式: 你需要输入要排除的曲目编号。")
+    sleep(2)
+    print("max_workers: 最大线程数。")
+    sleep(2)
+    print("max_retries: 最大重试次数。")
+    sleep(2)
+    print("chunk_size: 块大小。")
+    sleep(2)
+    print("num_threads: 每个文件的线程数。")
+    sleep(2)
+    print("use_multithreading: 是否使用多线程下载。")
+    sleep(2)
+    print("disable_ssl_warnings: 是否禁用 SSL 警告。")
+    sleep(2)
+    print("以上是配置文件的各个项目的作用，请你仔细阅读并理解每个配置项的作用，如果你有任何问题，请联系作者。")
+    sleep(2)
+    print("如果配置文件出错，你可以删除config.json文件，程序会自动按照默认配置新建配置文件。")
+    sleep(2)
+    print("教程已结束，程序将会退出，在重启后你可以开始使用本工具。另外，你可以在README.md中再次查看这些信息。")
+    input("按任意键退出")
+    quit()
 
 if __name__ == "__main__":
     main()
